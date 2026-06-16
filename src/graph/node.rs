@@ -2,7 +2,7 @@
 //!
 //! a node is one unit of work in a superstep (or a single transition, it depends on how the
 //! runtime schedules the graph). it takes in the current [`State`] snapshot by reference and
-//! returns a [`StateDelta`]. it mush not mutate the snapshot as-is, all output flows through the
+//! returns a [`StateDelta`]. it must not mutate the snapshot as-is, all output flows through the
 //! delta, which the runtime folds.
 //!
 //! run: &State ──► Delta ──runtime──► Merge ──► next State
@@ -15,7 +15,7 @@ use crate::graph::state::{Merge, State, StateDelta};
 
 /// a graph node is a read-only use of state and partial update via delta
 /// associated types tie each node to the state shape it expects and the delta shape it emits. the
-/// `State: Merge<Self::Delta>` bound ensures the runtime can allways apply the node's output.
+/// `State: Merge<Self::Delta>` bound ensures the runtime can always apply the node's output.
 pub trait Node {
     /// graph state this node reads
     type State: State + Merge<Self::Delta>;
