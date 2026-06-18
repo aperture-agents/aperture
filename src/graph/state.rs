@@ -1,7 +1,3 @@
-//! ```text
-//!   State₀  ──node A──▶  Δₐ
-//!        ╲──node B──▶  Δᵦ     ──Merge──▶  State₁
-//! ```
 //! graph state, partial updates, and merging
 //!
 //! execution should proceed in supersteps or node transitions. at any moment the runtime holds one
