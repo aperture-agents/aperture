@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use crate::graph::graph::Graph;
+use crate::graph::definition::Graph;
 use crate::graph::id::{Next, NodeId};
 use crate::graph::node::Node;
 use crate::graph::state::{Merge, State, StateDelta};
