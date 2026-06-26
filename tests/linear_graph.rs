@@ -2,7 +2,7 @@
 
 use aperture::graph::node::Node;
 use aperture::graph::state::{Merge, State, StateDelta};
-use aperture::graph::{Graph, NodeId, Runtime};
+use aperture::graph::{Graph, NodeId};
 
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
 struct Counter {
@@ -34,11 +34,12 @@ fn linear_graph_runs_until_end() {
     let a = NodeId("a");
     let b = NodeId("b");
 
-    let graph = Graph::new(a).edge(a, b).edge(b, NodeId::END);
+    let mut graph = Graph::build();
+    graph.add_node(a, Inc);
+    graph.add_node(b, Inc);
+    graph.add_edge(a, b);
+    graph.add_edge(b, NodeId::END);
 
-    let mut runtime = Runtime::new();
-    runtime.node(a, Inc).node(b, Inc);
-
-    let out = runtime.run(&graph, Counter::default()).unwrap();
+    let out = graph.run(Counter::default()).unwrap();
     assert_eq!(out.n, 2);
 }

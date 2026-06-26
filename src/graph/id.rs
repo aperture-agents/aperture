@@ -10,7 +10,7 @@
 pub struct NodeId(pub &'static str);
 
 impl NodeId {
-    /// graph entry, runtime jumps to `Graph::entry`, this is not execution of a node `__start__`
+    /// graph entry; runtime jumps to the graph's entry node, not execution of `__start__`
     pub const START: Self = Self("__start__");
 
     /// graph exit, ends run

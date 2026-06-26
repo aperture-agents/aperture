@@ -10,4 +10,4 @@ pub mod state;
 pub use definition::Graph;
 pub use id::{Next, NodeId};
 pub use route::{Fixed, FnRouter, Router};
-pub use runtime::{RunError, Runnable, Runtime};
+pub use runtime::{RunError, Runnable};
