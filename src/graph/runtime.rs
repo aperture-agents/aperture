@@ -14,7 +14,11 @@ use crate::graph::id::{Next, NodeId};
 use crate::graph::node::Node;
 use crate::graph::state::{Merge, State, StateDelta};
 
-/// every node in one graph must share the same `S` / `D`
+/// type-erased node handle for runtime
+/// `S` is the graph-wide state snapshot every node reads. `D` is the delta type stored in
+/// `HashMap<NodeId, Box<dyn Runnable<S, D>>>`
+/// does not mean the delta is the same in that it changes the state the same way, just means that
+/// the value of `D` differs but that it is still type delta
 pub trait Runnable<S, D> {
     fn run(&self, state: &S) -> D;
 }
