@@ -31,7 +31,7 @@ where
 /// why a run stopped early
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunError {
-    /// no entry point set and no nodes registered
+    /// no edge from `NodeId::START` to the first node was registered
     MissingEntry,
 
     /// graph references a node id with no registered implementation

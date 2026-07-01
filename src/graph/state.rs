@@ -86,22 +86,23 @@ pub trait StateDelta {}
 /// // [`StateDelta`] for a node that adds a new message to the chat
 /// // notice how this type differs from Chat in its fields. It is not even a subset of Chat.
 /// struct NewMessage {
-///     text:String,
+///     text: String,
 /// }
 ///
-/// impl State for MyState {}
+/// impl State for Chat {}
 /// impl StateDelta for NewMessage {}
 ///
 /// // default [`Merge`] implementation required to a valid Graph Node.
 /// impl Merge for Chat {
 ///     fn merge(&mut self, delta: Self) {
-///         self.messages.append(delta.messages);
+///         self.messages.append(&mut delta.messages.clone());
 ///         self.metadata += delta.metadata;
 ///     }
+/// }
 ///
 /// // custom [`Merge`] implementation which defines how a NewMessage is reduced into the existing
-/// // [`State`]: MyState. In this case we say NewMessage will append its text to messages.
-/// impl Merge<NewMessage> for MyState {
+/// // [`State`]: Chat. In this case we say NewMessage will append its text to messages.
+/// impl Merge<NewMessage> for Chat {
 ///     fn merge(&mut self, delta: NewMessage) {
 ///         self.messages.push(delta.text);
 ///     }

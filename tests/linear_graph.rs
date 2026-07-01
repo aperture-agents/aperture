@@ -1,5 +1,6 @@
-//! e2e smoke test of linear graph
+//! e2e smoke integration test of linear graph
 
+use aperture::graph::Graph;
 use aperture::graph::node::{Node, NodeId};
 use aperture::graph::state::{Merge, State, StateDelta};
 
@@ -36,6 +37,8 @@ fn linear_graph_runs_until_end() {
     let mut graph = Graph::build();
     graph.add_node(a, Inc);
     graph.add_node(b, Inc);
+
+    graph.add_edge(NodeId::START, a);
     graph.add_edge(a, b);
     graph.add_edge(b, NodeId::END);
 

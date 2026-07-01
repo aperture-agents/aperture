@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use crate::graph::node::{Node, NodeId, Next};
+use crate::graph::node::{Next, Node, NodeId};
 use crate::graph::route::{Edge, Router};
 use crate::graph::runtime::{RunError, Runnable};
 use crate::graph::state::{Merge, State, StateDelta};
@@ -13,7 +13,6 @@ use crate::graph::state::{Merge, State, StateDelta};
 /// central element of the library.
 /// users define one graph and register nodes and edges accordingly.
 pub struct Graph<S, D> {
-    entry: Option<NodeId>,
     nodes: HashMap<NodeId, Box<dyn Runnable<S, D>>>,
     routes: HashMap<NodeId, Box<dyn Router<S>>>,
 }
@@ -24,7 +23,6 @@ impl<S, D> Graph<S, D> {
     #[must_use]
     pub fn build() -> Self {
         Self {
-            entry: None,
             nodes: HashMap::new(),
             routes: HashMap::new(),
         }
@@ -35,9 +33,6 @@ impl<S, D> Graph<S, D> {
     where
         N: Node<State = S, Delta = D> + 'static,
     {
-        if self.entry.is_none() {
-            self.entry = Some(id);
-        }
         self.nodes.insert(id, Box::new(node));
         self
     }
@@ -64,13 +59,21 @@ impl<S, D> Graph<S, D> {
     }
 
     /// execute from `state` until [`crate::graph::id::Next::End`] or an error.
+    /// requires an edge from [`NodeId::START`] to the first real node.
     pub fn run(&self, mut state: S) -> Result<S, RunError>
     where
         S: State + Merge<D>,
         D: StateDelta,
     {
-        // fail if START not registered with a node
-        let mut current = self.entry.ok_or(RunError::MissingEntry)?;
+        // resolve the first real node via the mandatory START edge
+        let mut current = match self
+            .router(NodeId::START)
+            .ok_or(RunError::MissingEntry)?
+            .route(&state)
+        {
+            Next::Node(id) => id,
+            Next::End => return Ok(state),
+        };
 
         loop {
             // get the current node
