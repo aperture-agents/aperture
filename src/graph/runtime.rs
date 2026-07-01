@@ -14,8 +14,7 @@ use crate::graph::node::Node;
 /// the registry forces one shared `D` so the loop can call a single `state.merge(delta)`
 /// without node-specific dispatch
 ///
-/// (CONFUSED HERE TODO:) same `D` does not mean nodes change state the same way. they return different *values* of `D`
-/// (e.g. enum variants, optional fields); [`Merge`](crate::graph::state::Merge) decides how each applies.
+/// TODO: Confused here - "same `D` does not mean nodes change state the same way. they return different *values* of `D` (e.g. enum variants, optional fields); [`Merge`](crate::graph::state::Merge) decides how each applies."
 pub trait Runnable<S, D> {
     fn run(&self, state: &S) -> D;
 }
