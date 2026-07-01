@@ -35,11 +35,11 @@ pub enum RunError {
     MissingEntry,
 
     /// graph references a node id with no registered implementation
-    UnknownNode(crate::graph::id::NodeId),
+    UnknownNode(crate::graph::node::NodeId),
 
     /// node ran but has no outgoing route in the graph definition
-    MissingRoute(crate::graph::id::NodeId),
+    MissingRoute(crate::graph::node::NodeId),
 
     /// node panic'd during execution
-    NodePanic(crate::graph::id::NodeId),
+    NodePanic(crate::graph::node::NodeId),
 }

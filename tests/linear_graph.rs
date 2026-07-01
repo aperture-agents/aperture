@@ -1,8 +1,7 @@
 //! e2e smoke test of linear graph
 
-use aperture::graph::node::Node;
+use aperture::graph::node::{Node, NodeId};
 use aperture::graph::state::{Merge, State, StateDelta};
-use aperture::graph::{Graph, NodeId};
 
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
 struct Counter {

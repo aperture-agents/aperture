@@ -4,7 +4,7 @@
 //! edges are just routers that ignore the state and unconditionally run.
 //! conditional edge routers read state to determine the next step.
 
-use crate::graph::id::{Next, NodeId};
+use crate::graph::node::{Next, NodeId};
 
 /// pick next step from post-merge state
 ///
@@ -17,7 +17,7 @@ pub trait Router<S> {
 #[derive(Clone, Copy, Debug)]
 pub struct Edge(pub NodeId);
 
-impl<S> Router<S> for Edge{
+impl<S> Router<S> for Edge {
     fn route(&self, _state: &S) -> Next {
         Next::from_node(self.0)
     }

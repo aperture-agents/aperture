@@ -4,13 +4,14 @@
 
 use std::collections::HashMap;
 
-use crate::graph::id::NodeId;
-use crate::graph::node::Node;
-use crate::graph::route::{Fixed, Router};
+use crate::graph::node::{Node, NodeId, Next};
+use crate::graph::route::{Edge, Router};
 use crate::graph::runtime::{RunError, Runnable};
 use crate::graph::state::{Merge, State, StateDelta};
 
-/// graph builder and executor - nodes plus wiring in one place
+/// core graph builder and executor - nodes plus wiring in one place
+/// central element of the library.
+/// users define one graph and register nodes and edges accordingly.
 pub struct Graph<S, D> {
     entry: Option<NodeId>,
     nodes: HashMap<NodeId, Box<dyn Runnable<S, D>>>,
@@ -19,6 +20,7 @@ pub struct Graph<S, D> {
 
 impl<S, D> Graph<S, D> {
     /// empty graph; add nodes and edges, then run.
+    /// must_use ensures that the graph is ran.
     #[must_use]
     pub fn build() -> Self {
         Self {
@@ -26,14 +28,6 @@ impl<S, D> Graph<S, D> {
             nodes: HashMap::new(),
             routes: HashMap::new(),
         }
-    }
-
-    /// set the first node to run after [`NodeId::START`].
-    ///
-    /// if unset, the first [`add_node`](Self::add_node) call becomes the entry.
-    pub fn set_entry(&mut self, entry: NodeId) -> &mut Self {
-        self.entry = Some(entry);
-        self
     }
 
     /// register a runnable node at `id`.
@@ -48,13 +42,13 @@ impl<S, D> Graph<S, D> {
         self
     }
 
-    /// fixed edge: `from` always continues to `to`.
+    /// register an edge: `from` always continues to `to`.
     pub fn add_edge(&mut self, from: NodeId, to: NodeId) -> &mut Self {
-        self.routes.insert(from, Box::new(Fixed(to)));
+        self.routes.insert(from, Box::new(Edge(to)));
         self
     }
 
-    /// conditional edge: `from` delegates to `router` after it runs.
+    /// register a conditional edge: `from` delegates to `router` after it runs.
     pub fn add_conditional_edge(
         &mut self,
         from: NodeId,
@@ -75,23 +69,28 @@ impl<S, D> Graph<S, D> {
         S: State + Merge<D>,
         D: StateDelta,
     {
-        use crate::graph::id::Next;
-
+        // fail if START not registered with a node
         let mut current = self.entry.ok_or(RunError::MissingEntry)?;
 
         loop {
+            // get the current node
             let runnable = self
                 .nodes
                 .get(&current)
                 .ok_or(RunError::UnknownNode(current))?;
 
+            // run the node and get the delta
             let delta = runnable.run(&state);
+
+            // merge the delta into the state
             state.merge(delta);
 
+            // get the router for the current node
             let router = self
                 .router(current)
                 .ok_or(RunError::MissingRoute(current))?;
 
+            // route to the next node or return the final state
             match router.route(&state) {
                 Next::Node(next) => current = next,
                 Next::End => return Ok(state),
