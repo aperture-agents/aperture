@@ -6,9 +6,13 @@
 
 use crate::graph::node::{Next, NodeId};
 
+/// trait for edge types to implement
 /// pick next step from post-merge state
 ///
-/// TODO: unclear - "implement for unconditional, fixed edges or domain logic (reading a `route: Option<NodeId` field the node just wrote)"
+/// an edge is defined as a path between nodes
+/// as such routing frmo one node to another will give us a Next
+/// Next is the next Node to run or in case of END - graph termination
+///
 pub trait Router<S> {
     fn route(&self, state: &S) -> Next;
 }
@@ -23,12 +27,11 @@ impl<S> Router<S> for Edge {
     }
 }
 
-/// conditional via closure
+/// conditional route which selects Next from a closure result
 /// `F` refers to the function to execute to determine Next.
 /// `S` refers to the state to observe in order to make the correct Next decision.
-/// PhantomData<fn(&S)> used because a conditional route is generic over the function to run to
-/// determine Next AND the graph's [`State`](crate::graph::state::State) it oberserves to make the decision.
-/// TODO: rename this if this is conditional_route - test this.
+/// PhantomData<fn(&S)> used because FnRouter is generic over state but does not contain a state.
+///
 pub struct FnRouter<S, F>
 where
     F: Fn(&S) -> Next,
@@ -41,8 +44,6 @@ impl<S, F> FnRouter<S, F>
 where
     F: Fn(&S) -> Next,
 {
-    // TODO: comment this and revisit if this is a conditional_edge
-    // Should become new_conditional_edge
     pub fn new(f: F) -> Self {
         Self {
             f,

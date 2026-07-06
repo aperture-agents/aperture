@@ -24,7 +24,7 @@ use crate::graph::state::{Merge, State, StateDelta};
 /// This ensures a Node defines some bare minimum Merge implemention on its fields.
 pub trait Node {
     /// graph state this node reads
-    /// an associated type because a Graph will only ever use one unified State
+    /// an associated type because a Graph will only ever use one type of unified [`State`]
     /// as such only one implementation of Node for State is expected
     /// as such associated types are preferred to generic types
     type State: State + Merge<Self::Delta>;

@@ -29,18 +29,16 @@ impl<S, D> Graph<S, D> {
     }
 
     /// register a runnable node at `id`.
-    pub fn add_node<N>(&mut self, id: NodeId, node: N) -> &mut Self
+    pub fn add_node<N>(&mut self, id: NodeId, node: N)
     where
         N: Node<State = S, Delta = D> + 'static,
     {
         self.nodes.insert(id, Box::new(node));
-        self
     }
 
     /// register an edge: `from` always continues to `to`.
-    pub fn add_edge(&mut self, from: NodeId, to: NodeId) -> &mut Self {
+    pub fn add_edge(&mut self, from: NodeId, to: NodeId) {
         self.routes.insert(from, Box::new(Edge(to)));
-        self
     }
 
     /// register a conditional edge: `from` delegates to `router` after it runs.
@@ -48,9 +46,8 @@ impl<S, D> Graph<S, D> {
         &mut self,
         from: NodeId,
         router: impl Router<S> + 'static,
-    ) -> &mut Self {
+    ) {
         self.routes.insert(from, Box::new(router));
-        self
     }
 
     /// lookup the router for a node.
@@ -100,4 +97,12 @@ impl<S, D> Graph<S, D> {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_entry() { }
 }
