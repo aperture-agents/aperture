@@ -30,8 +30,8 @@ pub trait Node {
     type State: State + Merge<Self::Delta>;
 
     /// partial update this node produces
-    /// again an associated type because a given Node will only ever return one type of delta
-    /// as such only one implementation of Node with a given delta is expected
+    /// again an associated type because a given Node will only ever return one type of StateDelta
+    /// as such only one implementation of delta is expected
     /// as such associated types are preferred to generic types
     type Delta: StateDelta;
 
