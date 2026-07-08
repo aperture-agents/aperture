@@ -3,47 +3,78 @@
 //! build with [`Graph::build`], register nodes and wiring, then [`Graph::run`].
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 use crate::graph::node::{Next, Node, NodeId};
 use crate::graph::route::{Edge, Router};
 use crate::graph::runtime::{RunError, Runnable};
 use crate::graph::state::{Merge, State, StateDelta};
 
-/// core graph builder and executor - nodes plus wiring in one place
+/// errors for build operations
+///
+/// duplicate nodes are not allowed - causes routing issues
+#[derive(Debug)]
+pub enum BuildError {
+    DuplicateNode(NodeId),
+}
+
+/// core graph struct and executor - nodes plus wiring in one place
 /// central element of the library.
 /// users define one graph and register nodes and edges accordingly.
+/// represents a built valid graph
 pub struct Graph<S, D> {
     nodes: HashMap<NodeId, Box<dyn Runnable<S, D>>>,
     routes: HashMap<NodeId, Box<dyn Router<S>>>,
 }
 
-impl<S, D> Graph<S, D> {
-    /// empty graph; add nodes and edges, then run.
+/// core graph builder struct
+/// responsible for building the graph and validating it
+/// once built and validated it will become a [`Graph`]
+pub struct GraphBuilder<S, D> {
+    nodes: HashMap<NodeId, Box<dyn Runnable<S, D>>>,
+    routes: HashMap<NodeId, Box<dyn Router<S>>>,
+}
+
+impl<S, D> GraphBuilder<S, D> {
+    /// validate an assembled graph
     /// must_use ensures that the graph is ran.
     #[must_use]
-    pub fn build() -> Self {
-        Self {
+    pub fn build() -> Graph<S, D> {
+        Graph {
             nodes: HashMap::new(),
             routes: HashMap::new(),
         }
     }
+}
 
+impl<S, D> Graph<S, D> {
     /// register a runnable node at `id`.
-    pub fn add_node<N>(&mut self, id: NodeId, node: N)
+    /// duplicate NodeIds are not allowed.
+    pub fn add_node<N>(mut self, id: NodeId, node: N) -> Result<Self, BuildError>
     where
         N: Node<State = S, Delta = D> + 'static,
     {
-        self.nodes.insert(id, Box::new(node));
+        match self.nodes.entry(id) {
+            Entry::Vacant(entry) => {
+                entry.insert(Box::new(node));
+                Ok(self)
+            },
+            Entry::Occupied(_)=> {
+                return Err(BuildError::DuplicateNode(id)u)
+            },
+        }
     }
 
     /// register an edge: `from` always continues to `to`.
-    pub fn add_edge(&mut self, from: NodeId, to: NodeId) {
+    pub fn add_edge(mut self, from: NodeId, to: NodeId) -> Self {
         self.routes.insert(from, Box::new(Edge(to)));
+        self
     }
 
     /// register a conditional edge: `from` delegates to `router` after it runs.
-    pub fn add_conditional_edge(&mut self, from: NodeId, router: impl Router<S> + 'static) {
+    pub fn add_conditional_edge(mut self, from: NodeId, router: impl Router<S> + 'static) -> Self {
         self.routes.insert(from, Box::new(router));
+        self
     }
 
     /// lookup the router for a node.
@@ -127,15 +158,16 @@ mod tests {
     #[test]
     fn missing_entry() {
         // Ensure a graph thats missing START edge fails
+        //
+        // START -X- a ──▶ b ──▶ END
+        //
         let a = NodeId("node a");
         let b = NodeId("node b");
 
-        let mut graph = Graph::build();
-
-        graph.add_node(a, Inc);
-        graph.add_node(b, Inc);
-        graph.add_edge(a, b);
-        graph.add_edge(b, NodeId::END);
+        let mut graph = Graph::build().add_node(a, Inc).unwrap()
+        .add_node(b, Inc).unwrap()
+        .add_edge(a, b).
+        .add_edge(b, NodeId::END);
 
         let out = graph.run(Counter::default());
 
@@ -145,10 +177,16 @@ mod tests {
     #[test]
     fn missing_end() {
         // Ensure a graph thats missing END edge fails
+        // Currently this will manifest in a Runtime Error RunError::MissingRoute
+        // Do we want this? Or do we want a more explicit pre-emptive check
+        //
+        // START ──▶ a ──▶ b ──▶ ???
+        //
         let a = NodeId("a");
         let b = NodeId("b");
 
         let mut graph = Graph::build();
+
         graph.add_node(a, Inc);
         graph.add_node(b, Inc);
 
@@ -156,12 +194,38 @@ mod tests {
         graph.add_edge(a, b);
 
         let out = graph.run(Counter::default());
+
         assert_eq!(out.unwrap_err(), RunError::MissingRoute(b));
     }
 
     #[test]
-    fn unreachable_end() {
-        // Ensure a graph with an unreachable END edge fails
+    fn missing_edge() {
+        // Ensure a graph with a missing connection edge fails
+        //
+        // START ──▶ a ──▶ b ──▶ ???
+        //
+        // c ──▶ d ──▶ END   (unreachable island)
+        //
+        let a = NodeId("a");
+        let b = NodeId("b");
+        let c = NodeId("c");
+        let d = NodeId("d");
+
+        let mut graph = Graph::build();
+
+        graph.add_node(a, Inc);
+        graph.add_node(b, Inc);
+        graph.add_node(c, Inc);
+        graph.add_node(d, Inc);
+
+        graph.add_edge(NodeId::START, a);
+        graph.add_edge(a, b);
+        graph.add_edge(c, d);
+        graph.add_edge(d, NodeId::END);
+
+        let out = graph.run(Counter::default());
+
+        assert_eq!(out.unwrap_err(), RunError::MissingRoute(b));
     }
 
     #[test]
@@ -175,25 +239,85 @@ mod tests {
     }
 
     #[test]
-    fn simple_increment() {
-        // Ensure a simple linear graph works
+    fn duplicate_node() {
+        // Tests an illegal node
         let a = NodeId("a");
+        let illegal = NodeId("__end__");
         let b = NodeId("b");
 
         let mut graph = Graph::build();
+
         graph.add_node(a, Inc);
+        graph.add_node(illegal, Inc);
         graph.add_node(b, Inc);
 
         graph.add_edge(NodeId::START, a);
-        graph.add_edge(a, b);
+        graph.add_edge(a, illegal);
+        graph.add_edge(illegal, b);
         graph.add_edge(b, NodeId::END);
 
         let out = graph.run(Counter::default());
-        assert_eq!(out.unwrap().n, 2);
-    }
 
-    #[test]
-    fn spanning_graph() {
-        // Ensuring a spanning graph works properly
-    }
+        assert_eq!(out.unwrap().n, 3);
+}
+
+#[test]
+fn simple_increment() {
+    // Ensure a simple linear graph works
+    //
+    // START ──▶ a ──▶ b ──▶ END
+    //
+    let a = NodeId("a");
+    let b = NodeId("b");
+
+    let mut graph = Graph::build();
+    graph.add_node(a, Inc);
+    graph.add_node(b, Inc);
+
+    graph.add_edge(NodeId::START, a);
+    graph.add_edge(a, b);
+    graph.add_edge(b, NodeId::END);
+
+    let out = graph.run(Counter::default());
+
+    assert_eq!(out.unwrap().n, 2);
+}
+
+#[test]
+fn spanning_graph() {
+    // Ensuring a spanning graph works properly - expected to fail with current implementation
+    //
+    //           ┌──▶ a ──┐
+    //           │        │
+    // START ────┼──▶ b ──┼──▶ END
+    //           │        │
+    //           ├──▶ c ──┤
+    //           │        │
+    //           └──▶ d ──┘
+    //
+    let a = NodeId("a");
+    let b = NodeId("b");
+    let c = NodeId("c");
+    let d = NodeId("d");
+
+    let mut graph = Graph::build();
+    graph.add_node(a, Inc);
+    graph.add_node(b, Inc);
+    graph.add_node(c, Inc);
+    graph.add_node(d, Inc);
+
+    graph.add_edge(NodeId::START, a);
+    graph.add_edge(NodeId::START, b);
+    graph.add_edge(NodeId::START, c);
+    graph.add_edge(NodeId::START, d);
+
+    graph.add_edge(a, NodeId::END);
+    graph.add_edge(b, NodeId::END);
+    graph.add_edge(c, NodeId::END);
+    graph.add_edge(d, NodeId::END);
+
+    let out = graph.run(Counter::default());
+
+    assert_eq!(out.unwrap().n, 4);
+}
 }

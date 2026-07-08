@@ -76,3 +76,13 @@ impl Next {
         }
     }
 }
+mod test {
+    use super::*;
+    #[test]
+    fn illegal_node() {
+        // Tests an illegal node
+        let a = NodeId("a");
+        let illegal = NodeId("__end__");
+        let b = NodeId("b");
+    }
+}
