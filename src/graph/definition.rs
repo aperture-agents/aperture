@@ -3,7 +3,7 @@
 //! build with [`Graph::build`], register nodes and wiring, then [`Graph::run`].
 
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
+use std::fmt;
 
 use crate::graph::node::{Next, Node, NodeId};
 use crate::graph::route::{Edge, Router};
@@ -13,15 +13,20 @@ use crate::graph::state::{Merge, State, StateDelta};
 /// errors for build operations
 ///
 /// duplicate nodes are not allowed - causes routing issues
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum BuildError {
     DuplicateNode(NodeId),
+    MissingRoute(NodeId),
+    MissingExit,
+    MissingEntry,
+    InvalidEntry,
+    InvalidExit,
 }
 
 /// core graph struct and executor - nodes plus wiring in one place
 /// central element of the library.
 /// users define one graph and register nodes and edges accordingly.
-/// represents a built valid graph
+/// represents a built and validated graph
 pub struct Graph<S, D> {
     nodes: HashMap<NodeId, Box<dyn Runnable<S, D>>>,
     routes: HashMap<NodeId, Box<dyn Router<S>>>,
@@ -29,40 +34,20 @@ pub struct Graph<S, D> {
 
 /// core graph builder struct
 /// responsible for building the graph and validating it
-/// once built and validated it will become a [`Graph`]
+/// build() will validate and construct a runnable [`Graph`]
 pub struct GraphBuilder<S, D> {
     nodes: HashMap<NodeId, Box<dyn Runnable<S, D>>>,
     routes: HashMap<NodeId, Box<dyn Router<S>>>,
 }
 
 impl<S, D> GraphBuilder<S, D> {
-    /// validate an assembled graph
-    /// must_use ensures that the graph is ran.
-    #[must_use]
-    pub fn build() -> Graph<S, D> {
-        Graph {
-            nodes: HashMap::new(),
-            routes: HashMap::new(),
-        }
-    }
-}
-
-impl<S, D> Graph<S, D> {
     /// register a runnable node at `id`.
-    /// duplicate NodeIds are not allowed.
-    pub fn add_node<N>(mut self, id: NodeId, node: N) -> Result<Self, BuildError>
+    pub fn add_node<N>(mut self, id: NodeId, node: N) -> Self
     where
         N: Node<State = S, Delta = D> + 'static,
     {
-        match self.nodes.entry(id) {
-            Entry::Vacant(entry) => {
-                entry.insert(Box::new(node));
-                Ok(self)
-            },
-            Entry::Occupied(_)=> {
-                return Err(BuildError::DuplicateNode(id)u)
-            },
-        }
+        self.nodes.insert(id, Box::new(node));
+        self
     }
 
     /// register an edge: `from` always continues to `to`.
@@ -75,6 +60,51 @@ impl<S, D> Graph<S, D> {
     pub fn add_conditional_edge(mut self, from: NodeId, router: impl Router<S> + 'static) -> Self {
         self.routes.insert(from, Box::new(router));
         self
+    }
+
+    /// validate an assembled graph
+    /// must_use ensures that the graph is ran.
+    #[must_use]
+    pub fn build(self) -> Result<Graph<S, D>, BuildError> {
+        // START has an outgoing edge (START -> a)
+        if !self.routes.contains_key(&NodeId::START) {
+            return Err(BuildError::MissingEntry);
+        }
+        // END does not have an outgoing edge (End -> a)
+        if self.routes.contains_key(&NodeId::END) {
+            return Err(BuildError::InvalidExit);
+        }
+        // START does not have an incoming edge (a -> START)
+        self.routes.iter().
+
+        // END has an incoming edge (a -> END)
+
+
+        // TODO: Other Validation...
+
+        Ok(Graph {
+            nodes: self.nodes,
+            routes: self.routes,
+        })
+    }
+}
+
+impl<S, D> fmt::Debug for Graph<S, D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Graph")
+            .field("nodes", &self.nodes.len())
+            .field("routes", &self.routes.len())
+            .finish()
+    }
+}
+
+impl<S, D> Graph<S, D> {
+    /// create the builder instance for constructing the graph
+    pub fn builder() -> GraphBuilder<S, D> {
+        GraphBuilder {
+            nodes: HashMap::new(),
+            routes: HashMap::new(),
+        }
     }
 
     /// lookup the router for a node.
@@ -164,14 +194,49 @@ mod tests {
         let a = NodeId("node a");
         let b = NodeId("node b");
 
-        let mut graph = Graph::build().add_node(a, Inc).unwrap()
-        .add_node(b, Inc).unwrap()
-        .add_edge(a, b).
-        .add_edge(b, NodeId::END);
+        let graph = Graph::builder()
+            .add_node(a, Inc)
+            .add_node(b, Inc)
+            .add_edge(a, b)
+            .add_edge(b, NodeId::END)
+            .build();
 
-        let out = graph.run(Counter::default());
+        assert_eq!(graph.unwrap_err(), BuildError::MissingEntry)
+    }
 
-        assert_eq!(out.unwrap_err(), RunError::MissingEntry)
+    #[test]
+    fn entry_invalid_use() {
+        // Ensure a user cant route to START - only from START
+        //
+        // START -> a -> START
+        //
+        let a = NodeId("node a");
+
+        let graph = Graph::builder()
+            .add_node(a, Inc)
+            .add_edge(NodeId::START, a)
+            .add_edge(a, NodeId::START)
+            .build();
+
+        assert_eq!(graph.unwrap_err(), BuildError::InvalidEntry)
+    }
+
+    #[test]
+    fn end_invalid_use() {
+        // Ensure a user cant route from END - only to END
+        //
+        // START -> a -> END -> a
+        //
+        let a = NodeId("node a");
+
+        let graph = Graph::builder()
+            .add_node(a, Inc)
+            .add_edge(NodeId::START, a)
+            .add_edge(a, NodeId::END)
+            .add_edge(NodeId::END, a)
+            .build();
+
+        assert_eq!(graph.unwrap_err(), BuildError::InvalidExit)
     }
 
     #[test]
@@ -185,17 +250,14 @@ mod tests {
         let a = NodeId("a");
         let b = NodeId("b");
 
-        let mut graph = Graph::build();
+        let graph = Graph::builder()
+            .add_node(a, Inc)
+            .add_node(b, Inc)
+            .add_edge(NodeId::START, a)
+            .add_edge(a, b)
+            .build();
 
-        graph.add_node(a, Inc);
-        graph.add_node(b, Inc);
-
-        graph.add_edge(NodeId::START, a);
-        graph.add_edge(a, b);
-
-        let out = graph.run(Counter::default());
-
-        assert_eq!(out.unwrap_err(), RunError::MissingRoute(b));
+        assert_eq!(graph.unwrap_err(), BuildError::MissingExit);
     }
 
     #[test]
@@ -211,31 +273,28 @@ mod tests {
         let c = NodeId("c");
         let d = NodeId("d");
 
-        let mut graph = Graph::build();
+        let graph = Graph::builder()
+            .add_node(a, Inc)
+            .add_node(b, Inc)
+            .add_node(c, Inc)
+            .add_node(d, Inc)
+            .add_edge(NodeId::START, a)
+            .add_edge(a, b)
+            .add_edge(c, d)
+            .add_edge(d, NodeId::END)
+            .build();
 
-        graph.add_node(a, Inc);
-        graph.add_node(b, Inc);
-        graph.add_node(c, Inc);
-        graph.add_node(d, Inc);
-
-        graph.add_edge(NodeId::START, a);
-        graph.add_edge(a, b);
-        graph.add_edge(c, d);
-        graph.add_edge(d, NodeId::END);
-
-        let out = graph.run(Counter::default());
-
-        assert_eq!(out.unwrap_err(), RunError::MissingRoute(b));
+        assert_eq!(graph.unwrap_err(), BuildError::MissingRoute(b));
     }
 
     #[test]
     fn empty_graph() {
         // Ensure an empty graph returns Error
-        let graph = Graph::<Counter, Counter>::build();
+        // For now this is Missing Start Node but should this be a seperate error?
+        //
+        let graph = Graph::<Counter, Counter>::builder().build();
 
-        let out = graph.run(Counter::default());
-
-        assert_eq!(out.unwrap_err(), RunError::MissingEntry)
+        assert_eq!(graph.unwrap_err(), BuildError::MissingEntry)
     }
 
     #[test]
@@ -245,79 +304,80 @@ mod tests {
         let illegal = NodeId("__end__");
         let b = NodeId("b");
 
-        let mut graph = Graph::build();
-
-        graph.add_node(a, Inc);
-        graph.add_node(illegal, Inc);
-        graph.add_node(b, Inc);
-
-        graph.add_edge(NodeId::START, a);
-        graph.add_edge(a, illegal);
-        graph.add_edge(illegal, b);
-        graph.add_edge(b, NodeId::END);
+        let graph = Graph::builder()
+            .add_node(a, Inc)
+            .add_node(illegal, Inc)
+            .add_node(b, Inc)
+            .add_edge(NodeId::START, a)
+            .add_edge(a, illegal)
+            .add_edge(illegal, b)
+            .add_edge(b, NodeId::END)
+            .build()
+            .unwrap();
 
         let out = graph.run(Counter::default());
 
         assert_eq!(out.unwrap().n, 3);
-}
+    }
 
-#[test]
-fn simple_increment() {
-    // Ensure a simple linear graph works
-    //
-    // START ──▶ a ──▶ b ──▶ END
-    //
-    let a = NodeId("a");
-    let b = NodeId("b");
+    #[test]
+    fn simple_increment() {
+        // Ensure a simple linear graph works
+        //
+        // START ──▶ a ──▶ b ──▶ END
+        //
+        let a = NodeId("a");
+        let b = NodeId("b");
 
-    let mut graph = Graph::build();
-    graph.add_node(a, Inc);
-    graph.add_node(b, Inc);
+        let graph = Graph::builder()
+            .add_node(a, Inc)
+            .add_node(b, Inc)
+            .add_edge(NodeId::START, a)
+            .add_edge(a, b)
+            .add_edge(b, NodeId::END)
+            .build()
+            .unwrap();
 
-    graph.add_edge(NodeId::START, a);
-    graph.add_edge(a, b);
-    graph.add_edge(b, NodeId::END);
+        let out = graph.run(Counter::default());
 
-    let out = graph.run(Counter::default());
+        assert_eq!(out.unwrap().n, 2);
+    }
 
-    assert_eq!(out.unwrap().n, 2);
-}
+    #[test]
+    fn spanning_graph() {
+        // Ensuring a spanning graph works properly - expected to fail with current implementation
+        //
+        //           ┌──▶ a ──┐
+        //           │        │
+        // START ────┼──▶ b ──┼──▶ END
+        //           │        │
+        //           ├──▶ c ──┤
+        //           │        │
+        //           └──▶ d ──┘
+        //
+        let a = NodeId("a");
+        let b = NodeId("b");
+        let c = NodeId("c");
+        let d = NodeId("d");
 
-#[test]
-fn spanning_graph() {
-    // Ensuring a spanning graph works properly - expected to fail with current implementation
-    //
-    //           ┌──▶ a ──┐
-    //           │        │
-    // START ────┼──▶ b ──┼──▶ END
-    //           │        │
-    //           ├──▶ c ──┤
-    //           │        │
-    //           └──▶ d ──┘
-    //
-    let a = NodeId("a");
-    let b = NodeId("b");
-    let c = NodeId("c");
-    let d = NodeId("d");
+        let graph = Graph::builder()
+            .add_node(a, Inc)
+            .add_node(b, Inc)
+            .add_node(c, Inc)
+            .add_node(d, Inc)
+            .add_edge(NodeId::START, a)
+            .add_edge(NodeId::START, b)
+            .add_edge(NodeId::START, c)
+            .add_edge(NodeId::START, d)
+            .add_edge(a, NodeId::END)
+            .add_edge(b, NodeId::END)
+            .add_edge(c, NodeId::END)
+            .add_edge(d, NodeId::END)
+            .build()
+            .unwrap();
 
-    let mut graph = Graph::build();
-    graph.add_node(a, Inc);
-    graph.add_node(b, Inc);
-    graph.add_node(c, Inc);
-    graph.add_node(d, Inc);
+        let out = graph.run(Counter::default());
 
-    graph.add_edge(NodeId::START, a);
-    graph.add_edge(NodeId::START, b);
-    graph.add_edge(NodeId::START, c);
-    graph.add_edge(NodeId::START, d);
-
-    graph.add_edge(a, NodeId::END);
-    graph.add_edge(b, NodeId::END);
-    graph.add_edge(c, NodeId::END);
-    graph.add_edge(d, NodeId::END);
-
-    let out = graph.run(Counter::default());
-
-    assert_eq!(out.unwrap().n, 4);
-}
+        assert_eq!(out.unwrap().n, 4);
+    }
 }
