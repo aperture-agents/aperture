@@ -74,12 +74,8 @@ impl<S, D> GraphBuilder<S, D> {
         if self.routes.contains_key(&NodeId::END) {
             return Err(BuildError::InvalidExit);
         }
-        // START does not have an incoming edge (a -> START)
-        self.routes.iter().
-
-        // END has an incoming edge (a -> END)
-
-
+        // TODO: START does not have an incoming edge (a -> START)
+        // TODO: END has an incoming edge (a -> END)
         // TODO: Other Validation...
 
         Ok(Graph {
@@ -207,6 +203,7 @@ mod tests {
     #[test]
     fn entry_invalid_use() {
         // Ensure a user cant route to START - only from START
+        // TODO: Validation check not implemented here yet
         //
         // START -> a -> START
         //
@@ -224,6 +221,7 @@ mod tests {
     #[test]
     fn end_invalid_use() {
         // Ensure a user cant route from END - only to END
+        // TODO: Validation check not implemented here yet
         //
         // START -> a -> END -> a
         //
@@ -263,6 +261,7 @@ mod tests {
     #[test]
     fn missing_edge() {
         // Ensure a graph with a missing connection edge fails
+        // TODO: Currently fails due to no validation for walking the graph
         //
         // START ──▶ a ──▶ b ──▶ ???
         //
@@ -300,6 +299,10 @@ mod tests {
     #[test]
     fn duplicate_node() {
         // Tests an illegal node
+        //
+        // START ──▶ a ──▶ illegal (__END__) -> b -> END
+        //
+        // TODO: currently fails due to using END as a Edge Key - This SHOULD Fail but probably during Node creation
         let a = NodeId("a");
         let illegal = NodeId("__end__");
         let b = NodeId("b");
@@ -312,12 +315,9 @@ mod tests {
             .add_edge(a, illegal)
             .add_edge(illegal, b)
             .add_edge(b, NodeId::END)
-            .build()
-            .unwrap();
+            .build();
 
-        let out = graph.run(Counter::default());
-
-        assert_eq!(out.unwrap().n, 3);
+        assert_eq!(graph.unwrap_err(), BuildError::InvalidExit);
     }
 
     #[test]
@@ -345,7 +345,8 @@ mod tests {
 
     #[test]
     fn spanning_graph() {
-        // Ensuring a spanning graph works properly - expected to fail with current implementation
+        // Ensuring a spanning graph works properly
+        // TODO: expected to fail with current implementation
         //
         //           ┌──▶ a ──┐
         //           │        │
@@ -380,4 +381,31 @@ mod tests {
 
         assert_eq!(out.unwrap().n, 4);
     }
+
+    #[test]
+    fn basic_conditional() {
+        // Ensure a basic conditional edge works
+        todo!()
+    }
+
+    #[test]
+    fn advanced_conditional() {
+        // Ensure a conditional works for more advanced state comparisons
+    }
+
+    #[test]
+    fn conditional_exit() {
+        // Ensure conditionals can exit
+    }
+
+    #[test]
+    fn looping_conditional() {
+        // Ensure we can invoke some recursion with conditionals
+    }
+
+    #[test]
+    fn invalid_conditional_entry() {
+        // Ensure conditionals cant loop back to START
+    }
+
 }
