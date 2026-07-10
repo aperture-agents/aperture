@@ -55,6 +55,12 @@ impl NodeId {
     pub const END: Self = Self("__end__");
 }
 
+impl From<&'static str> for NodeId {
+    fn from(value: &'static str) -> Self {
+        Self(value)
+    }
+}
+
 /// where to go after current node finishes and delta merged?
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Next {
