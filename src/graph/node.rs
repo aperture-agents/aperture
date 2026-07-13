@@ -74,11 +74,12 @@ pub enum Next {
 impl Next {
     /// normalize `NodeId::END` into `Next::End`
     #[must_use]
-    pub fn from_node(id: NodeId) -> Self {
-        if id == NodeId::END {
+    pub fn from_node(id: impl Into<NodeId>) -> Self {
+        let f_id = id.into();
+        if f_id == NodeId::END {
             Self::End
         } else {
-            Self::Node(id)
+            Self::Node(f_id)
         }
     }
 }

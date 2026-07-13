@@ -2,7 +2,7 @@
 //!
 //! build with [`Graph::build`], register nodes and wiring, then [`Graph::run`].
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
 use crate::graph::node::{Next, Node, NodeId};
@@ -32,7 +32,7 @@ pub struct Graph<S, D> {
     routes: HashMap<NodeId, Box<dyn Router<S>>>,
 }
 
-/// core graph builder struct
+/// private core graph builder struct
 /// responsible for building the graph and validating it
 /// build() will validate and construct a runnable [`Graph`]
 pub struct GraphBuilder<S, D> {
@@ -49,7 +49,7 @@ impl<S, D> GraphBuilder<S, D> {
     {
         let id = id.into();
         if self.nodes.insert(id, Box::new(node)).is_some() {
-            self.error = Some(BuildError::DuplicateNode(id));
+            self.error.get_or_insert(BuildError::DuplicateNode(id));
         }
         self
     }
@@ -58,21 +58,44 @@ impl<S, D> GraphBuilder<S, D> {
     pub fn add_edge(mut self, from: impl Into<NodeId>, to: impl Into<NodeId>) -> Self {
         let f_id = from.into();
         let t_id = to.into();
+
         // START cannot be a to
         if t_id == NodeId::START {
-            self.error = Some(BuildError::InvalidEntry);
+            self.error.get_or_insert(BuildError::InvalidEntry);
         }
+
         // END cannot be a from
         if f_id == NodeId::END {
-            self.error = Some(BuildError::InvalidExit);
+            self.error.get_or_insert(BuildError::InvalidExit);
         }
         self.routes.insert(f_id, Box::new(Edge(t_id)));
         self
     }
 
     /// register a conditional edge: `from` delegates to `router` after it runs.
-    pub fn add_conditional_edge(mut self, from: impl Into<NodeId>, router: impl Router<S> + 'static) -> Self {
-        self.routes.insert(from.into(), Box::new(router));
+    /// NOTE: No current clean way to validate the router possibilites and if they're valid
+    pub fn add_conditional_edge(
+        mut self,
+        from: impl Into<NodeId>,
+        router: impl Router<S> + 'static,
+    ) -> Self {
+        let f_id = from.into();
+        let invalid_start = router
+            .possible_next()
+            .iter()
+            .any(|p| *p == Next::from_node("__start__"));
+
+        // START cannot be a to
+        if invalid_start {
+            self.error.get_or_insert(BuildError::InvalidEntry);
+        }
+
+        // END cannot be a from
+        if f_id == NodeId::END {
+            self.error.get_or_insert(BuildError::InvalidExit);
+        }
+
+        self.routes.insert(f_id, Box::new(router));
         self
     }
 
@@ -80,21 +103,60 @@ impl<S, D> GraphBuilder<S, D> {
     /// must_use ensures that the graph is ran.
     #[must_use]
     pub fn build(self) -> Result<Graph<S, D>, BuildError> {
-        // Check for any errors found during add_* calls
+        // Check for any errors found during build steps
         if let Some(err) = self.error {
             return Err(err);
         }
-        // START has an outgoing edge (START -> a)
+
+        // Ensure START has an outgoing edge (START -> a)
         if !self.routes.contains_key(&NodeId::START) {
             return Err(BuildError::MissingEntry);
         }
-        // END does not have an outgoing edge (End -> a)
+
+        // Ensure END does not have an outgoing edge (End -> a)
         if self.routes.contains_key(&NodeId::END) {
             return Err(BuildError::InvalidExit);
         }
-        // TODO: START does not have an incoming edge (a -> START)
-        // TODO: END has an incoming edge (a -> END)
-        // TODO: Other Validation...
+
+        // every registered node must have an outgoing route
+        for id in self.nodes.keys() {
+            if !self.routes.contains_key(id) {
+                return Err(BuildError::MissingRoute(*id));
+            }
+        }
+
+        // Walk the graph to ensure every node can be reached via some edge
+        // Also ensure that END can be reached via some edge
+        // walk every router's declared possible_next()
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::from([NodeId::START]);
+        let mut end_reachable = false;
+
+        while let Some(current) = queue.pop_front() {
+            if !visited.insert(current) {
+                continue;
+            }
+            let Some(router) = self.routes.get(&current) else {
+                continue; // no outgoing route from here — already caught above for real nodes
+            };
+
+            for next in router.possible_next() {
+                match next {
+                    Next::Node(target) => {
+                        if target != NodeId::END && !self.nodes.contains_key(&target) {
+                            // a conditional edge declares a target that was never add_node'd
+                            return Err(BuildError::MissingRoute(target));
+                        }
+                        queue.push_back(target);
+                    }
+                    Next::End => end_reachable = true,
+                }
+            }
+        }
+
+        if !end_reachable {
+            return Err(BuildError::MissingExit);
+        }
 
         Ok(Graph {
             nodes: self.nodes,
@@ -213,19 +275,35 @@ mod tests {
         type Delta = Counter;
 
         fn run(&self, _state: &Self::State) -> Self::Delta {
-            Counter { n: -1}
+            Counter { n: -1 }
         }
     }
 
-    struct ZeroOrEnd;
+    struct EndIfZero;
 
-    impl Router<Counter> for ZeroOrEnd{
+    impl Router<Counter> for EndIfZero {
         fn route(&self, state: &Counter) -> Next {
             if state.n == 0 {
-                Next::Node(NodeId("a"))
+                return Next::End;
             } else {
-                Next::End
+                return Next::from_node("a");
             }
+        }
+
+        fn possible_next(&self) -> Vec<Next> {
+            vec![Next::from_node("a"), Next::End]
+        }
+    }
+
+    struct ToStart;
+
+    impl Router<Counter> for ToStart {
+        fn route(&self, _state: &Counter) -> Next {
+            Next::from_node("__start__")
+        }
+
+        fn possible_next(&self) -> Vec<Next> {
+            vec![Next::from_node("__start__")]
         }
     }
 
@@ -284,7 +362,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Currently fails due to no validation for walking the graph"]
     fn missing_end() {
         // Ensure a graph thats missing END edge fails
         // Currently this will manifest in a Runtime Error RunError::MissingRoute
@@ -300,13 +377,13 @@ mod tests {
             .add_node(b, Inc)
             .add_edge(NodeId::START, a)
             .add_edge(a, b)
+            .add_edge(b, a)
             .build();
 
         assert_eq!(graph.unwrap_err(), BuildError::MissingExit);
     }
 
     #[test]
-    #[ignore = "Currently fails due to no validation for walking the graph"]
     fn missing_edge() {
         // Ensure a graph with a missing connection edge fails
         //
@@ -438,30 +515,37 @@ mod tests {
         let a = NodeId("a");
 
         let graph = Graph::builder()
-            .add_node(a, Inc)
-            .add_conditional_edge(NodeId::START, ZeroOrEnd)
+            .add_node(a, Dec)
+            .add_conditional_edge(NodeId::START, EndIfZero)
             .add_edge(a, NodeId::END)
             .build()
             .unwrap();
 
-        let out = graph.run(Counter::default());
+        let out = graph.run(Counter::new(2));
 
         assert_eq!(out.unwrap().n, 1);
     }
 
     #[test]
-    fn conditional_exit() {
-        // Ensure conditionals can exit
-    }
-
-    #[test]
     fn looping_conditional() {
         // Ensure we can invoke some recursion with conditionals
+        //        n != 0
+        //   ┌────────────────┐
+        //   │                ▼
+        //   │      START ──▶ a  ─┐
+        //   │                    │
+        //   └────────────────────┘
+        //  (a routes back through DecUntilZero)
+        //
+        //              n == 0
+        //   START ──────────────▶ END
+        //
         let a = NodeId("a");
 
         let graph = Graph::builder()
             .add_node(a, Dec)
-            .add_conditional_edge(NodeId::START, ZeroOrEnd)
+            .add_edge(NodeId::START, a)
+            .add_conditional_edge("a", EndIfZero)
             .build()
             .unwrap();
 
@@ -471,8 +555,34 @@ mod tests {
     }
 
     #[test]
-    fn invalid_conditional_entry() {
-        // Ensure conditionals cant route to START
+    fn invalid_conditional_exit() {
+        // Ensure conditionals cant route from END
+        //
+        // END ──────────────▶ ???
+        //
+        let graph = Graph::<Counter, Counter>::builder()
+            .add_conditional_edge(NodeId::END, EndIfZero)
+            .build()
+            .unwrap_err();
+
+        assert_eq!(graph, BuildError::InvalidExit);
     }
 
+    #[test]
+    fn invalid_conditional_entry() {
+        // Ensure conditionals cant route to START
+        //
+        // START ──────▶ a ── X ──▶ START
+        //
+        // This is not allowed in our current design.
+        //
+        let graph = Graph::builder()
+            .add_node("a", Inc)
+            .add_edge(NodeId::START, "a")
+            .add_conditional_edge("a", ToStart)
+            .build()
+            .unwrap_err();
+
+        assert_eq!(graph, BuildError::InvalidEntry);
+    }
 }

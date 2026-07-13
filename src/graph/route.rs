@@ -15,6 +15,7 @@ use crate::graph::node::{Next, NodeId};
 ///
 pub trait Router<S> {
     fn route(&self, state: &S) -> Next;
+    fn possible_next(&self) -> Vec<Next>;
 }
 
 /// edge always routes to same target, so we can use `NodeId::END` as `to` for a terminal node
@@ -24,6 +25,10 @@ pub struct Edge(pub NodeId);
 impl<S> Router<S> for Edge {
     fn route(&self, _state: &S) -> Next {
         Next::from_node(self.0)
+    }
+
+    fn possible_next(&self) -> Vec<Next> {
+        vec![Next::from_node(self.0)] // unconditional edge - only one possible next
     }
 }
 
@@ -37,6 +42,7 @@ where
     F: Fn(&S) -> Next,
 {
     f: F,
+    possible_next: Vec<Next>,
     _marker: std::marker::PhantomData<fn(&S)>,
 }
 
@@ -44,9 +50,10 @@ impl<S, F> FnRouter<S, F>
 where
     F: Fn(&S) -> Next,
 {
-    pub fn new(f: F) -> Self {
+    pub fn new(f: F, possible_next: Vec<Next>) -> Self {
         Self {
             f,
+            possible_next,
             _marker: std::marker::PhantomData,
         }
     }
@@ -58,5 +65,9 @@ where
 {
     fn route(&self, state: &S) -> Next {
         (self.f)(state)
+    }
+
+    fn possible_next(&self) -> Vec<Next> {
+        self.possible_next.clone()
     }
 }

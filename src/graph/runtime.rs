@@ -8,13 +8,12 @@ use crate::graph::node::Node;
 /// type-erased node handle for the runtime registry
 ///
 /// `S` is the graph-wide state that every node in the graph should accept.
-/// `D` is the delta return type of the node.
+/// `D` is the delta return type. (Fields from S that are expected to change as a result of the node running)
 /// We store our nodes as - `HashMap<NodeId, Box<dyn Runnable<S, D>>>` - a simplification, not a model rule.
 /// [`Node`] allows per-node [`StateDelta`](crate::graph::state::StateDelta) types;
 /// the registry forces one shared `D` so the loop can call a single `state.merge(delta)`
 /// without node-specific dispatch
 ///
-/// TODO: Confused here - "same `D` does not mean nodes change state the same way. they return different *values* of `D` (e.g. enum variants, optional fields); [`Merge`](crate::graph::state::Merge) decides how each applies."
 pub trait Runnable<S, D> {
     fn run(&self, state: &S) -> D;
 }

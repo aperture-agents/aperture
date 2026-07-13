@@ -116,3 +116,8 @@ pub trait Merge<D = Self> {
     /// match the intended semantics
     fn merge(&mut self, delta: D);
 }
+
+mod tests {
+    use super::*;
+    // TODO: TEST MERGE
+}
