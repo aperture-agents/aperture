@@ -283,9 +283,9 @@ mod tests {
     impl Router<Counter> for EndIfZero {
         fn route(&self, state: &Counter) -> Next {
             if state.n == 0 {
-                return Next::End;
+                Next::End
             } else {
-                return Next::from_node("a");
+                Next::from_node("a")
             }
         }
 
