@@ -119,5 +119,79 @@ pub trait Merge<D = Self> {
 
 mod tests {
     use super::*;
-    // TODO: TEST MERGE
+    use crate::graph::state::{Merge, State, StateDelta};
+
+    #[derive(PartialEq, Debug)]
+    enum Status {
+        Pending,
+        Started,
+        Finished
+    }
+
+    struct ComplexState {
+        status: Status,
+        items: Vec<String>,
+        count: usize,
+    }
+
+    impl State for ComplexState {}
+
+    impl Merge for ComplexState {
+        fn merge(&mut self, delta: Self) {
+            self.status = delta.status;
+            self.count += delta.items.len();
+            self.items.extend(delta.items);
+        }
+    }
+
+    struct UpdateStatus {
+        status: Status
+    }
+
+    impl StateDelta for UpdateStatus {}
+
+    impl Merge<UpdateStatus> for ComplexState {
+        fn merge(&mut self, delta: UpdateStatus) {
+            if self.status == Status::Finished {
+                return
+            }
+            self.status = delta.status
+        }
+    }
+
+    struct DeleteItems {
+        items: Vec<String>,
+    }
+
+    impl StateDelta for DeleteItems {}
+
+    impl Merge<DeleteItems> for ComplexState {
+        fn merge(&mut self, delta: DeleteItems) {
+            self.items.retain(|x| !delta.items.contains(x));
+            self.count = self.items.len();
+        }
+    }
+
+    #[test]
+    fn default_merge() {}
+
+    #[test]
+    fn update_complex() {
+        let mut state = ComplexState {
+            status: Status::Pending,
+            items: Vec::new(),
+            count: 0,
+        };
+
+        let new_status = UpdateStatus {
+            status: Status::Started
+        };
+
+        state.merge(new_status);
+
+        assert_eq!(&state.status, &Status::Started);
+    }
+
+    #[test]
+    fn delete_items() {}
 }

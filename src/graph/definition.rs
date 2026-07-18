@@ -572,7 +572,7 @@ mod tests {
     fn invalid_conditional_entry() {
         // Ensure conditionals cant route to START
         //
-        // START ──────▶ a ── X ──▶ START
+        // START ──────▶ a ──X──▶ START
         //
         // This is not allowed in our current design.
         //
