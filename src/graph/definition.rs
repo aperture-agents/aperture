@@ -100,8 +100,7 @@ impl<S, D> GraphBuilder<S, D> {
     }
 
     /// validate an assembled graph
-    /// must_use ensures that the graph is ran.
-    #[must_use]
+    /// Result is #[must_use] this ensures the graph is handled and ran
     pub fn build(self) -> Result<Graph<S, D>, BuildError> {
         // Check for any errors found during build steps
         if let Some(err) = self.error {
