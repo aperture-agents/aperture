@@ -117,15 +117,15 @@ pub trait Merge<D = Self> {
     fn merge(&mut self, delta: D);
 }
 
+#[cfg(test)]
 mod tests {
-    use super::*;
     use crate::graph::state::{Merge, State, StateDelta};
 
     #[derive(PartialEq, Debug)]
     enum Status {
         Pending,
         Started,
-        Finished
+        Finished,
     }
 
     struct ComplexState {
@@ -145,7 +145,7 @@ mod tests {
     }
 
     struct UpdateStatus {
-        status: Status
+        status: Status,
     }
 
     impl StateDelta for UpdateStatus {}
@@ -153,7 +153,7 @@ mod tests {
     impl Merge<UpdateStatus> for ComplexState {
         fn merge(&mut self, delta: UpdateStatus) {
             if self.status == Status::Finished {
-                return
+                return;
             }
             self.status = delta.status
         }
@@ -173,7 +173,29 @@ mod tests {
     }
 
     #[test]
-    fn default_merge() {}
+    fn default_merge() {
+        let mut s_1 = ComplexState {
+            status: Status::Pending,
+            items: Vec::new(),
+            count: 0,
+        };
+
+        let s_2 = ComplexState {
+            status: Status::Finished,
+            items: vec!["1", "2", "3", "4", "5"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            count: 5,
+        };
+
+        s_1.merge(s_2);
+
+        assert_eq!(&s_1.items[0], &String::from("1"));
+        assert_eq!(&s_1.items[&s_1.items.len() - 1], &String::from("5"));
+        assert_eq!(&s_1.status, &Status::Finished);
+        assert_eq!(&s_1.count, &5);
+    }
 
     #[test]
     fn update_complex() {
@@ -184,7 +206,7 @@ mod tests {
         };
 
         let new_status = UpdateStatus {
-            status: Status::Started
+            status: Status::Started,
         };
 
         state.merge(new_status);
@@ -193,5 +215,20 @@ mod tests {
     }
 
     #[test]
-    fn delete_items() {}
+    fn delete_items() {
+        let mut state = ComplexState {
+            status: Status::Started,
+            items: vec![String::from("Hello"), String::from("Goodbye")],
+            count: 2,
+        };
+
+        let delete = DeleteItems {
+            items: vec![String::from("Hello"), String::from("Goodbye")],
+        };
+
+        state.merge(delete);
+
+        assert_eq!(&state.items, &Vec::<String>::new());
+        assert_eq!(&state.count, &0);
+    }
 }
