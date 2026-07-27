@@ -43,7 +43,7 @@ pub trait Node {
 
 /// unique node id for a slot in a graph def
 /// helps the runtime discern and fetch nodes.
-/// unique market nodes like START and END are responsible for marking runtime start and ends.
+/// unique marker nodes like START and END are responsible for marking runtime start and ends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodeId(pub &'static str);
 

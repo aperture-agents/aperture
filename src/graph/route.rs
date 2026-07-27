@@ -10,7 +10,7 @@ use crate::graph::node::{Next, NodeId};
 /// pick next step from post-merge state
 ///
 /// an edge is defined as a path between nodes
-/// as such routing frmo one node to another will give us a Next
+/// as such routing from one node to another will give us a Next
 /// Next is the next Node to run or in case of END - graph termination
 ///
 pub trait Router<S> {
