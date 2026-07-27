@@ -155,7 +155,7 @@ impl<S, D> GraphBuilder<S, D> {
 
         // Fail if some node was not visited
         for node in self.nodes.keys() {
-            if visited.get(node).is_none() {
+            if !visited.contains(node) {
                 return Err(BuildError::MissingRoute(*node));
             }
         }
