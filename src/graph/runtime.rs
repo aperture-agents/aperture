@@ -7,14 +7,13 @@ use crate::graph::node::Node;
 
 /// type-erased node handle for the runtime registry
 ///
-/// `S` is the graph-wide state snapshot every node reads. `D` is the delta type stored in
-/// `HashMap<NodeId, Box<dyn Runnable<S, D>>>` - a simplification, not a model rule.
-/// [`Node`] still allows per-node `Delta` types; the registry forces one shared `D` so the loop
-/// can call a single `state.merge(delta)` without node-specific dispatch
+/// `S` is the graph-wide state that every node in the graph should accept.
+/// `D` is the delta return type. (Fields from S that are expected to change as a result of the node running)
+/// We store our nodes as - `HashMap<NodeId, Box<dyn Runnable<S, D>>>` - a simplification, not a model rule.
+/// [`Node`] allows per-node [`StateDelta`](crate::graph::state::StateDelta) types;
+/// the registry forces one shared `D` so the loop can call a single `state.merge(delta)`
+/// without node-specific dispatch
 ///
-/// same `D` does not mean nodes change state the same way. they return different *values* of `D`
-/// (e.g. enum variants, optional fields); [`Merge`](crate::graph::state::Merge) decides how each
-/// applies
 pub trait Runnable<S, D> {
     fn run(&self, state: &S) -> D;
 }
@@ -31,12 +30,15 @@ where
 /// why a run stopped early
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunError {
-    /// no entry point set and no nodes registered
+    /// no edge from `NodeId::START` to the first node was registered
     MissingEntry,
 
     /// graph references a node id with no registered implementation
-    UnknownNode(crate::graph::id::NodeId),
+    UnknownNode(crate::graph::node::NodeId),
 
     /// node ran but has no outgoing route in the graph definition
-    MissingRoute(crate::graph::id::NodeId),
+    MissingRoute(crate::graph::node::NodeId),
+
+    /// node panic'd during execution
+    NodePanic(crate::graph::node::NodeId),
 }
