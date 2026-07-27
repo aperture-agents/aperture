@@ -32,7 +32,7 @@ pub struct Graph<S, D> {
     routes: HashMap<NodeId, Box<dyn Router<S>>>,
 }
 
-/// private core graph builder struct
+/// core graph builder struct
 /// responsible for building the graph and validating it
 /// build() will validate and construct a runnable [`Graph`]
 pub struct GraphBuilder<S, D> {
@@ -153,6 +153,14 @@ impl<S, D> GraphBuilder<S, D> {
             }
         }
 
+        // Fail if some node was not visited
+        for node in self.nodes.keys() {
+            if visited.get(node).is_none() {
+                return Err(BuildError::MissingRoute(*node));
+            }
+        }
+
+        // Fail if end is not reachable
         if !end_reachable {
             return Err(BuildError::MissingExit);
         }
@@ -188,7 +196,7 @@ impl<S, D> Graph<S, D> {
         self.routes.get(&from).map(|b| b.as_ref())
     }
 
-    /// execute from `state` until [`crate::graph::id::Next::End`] or an error.
+    /// execute from `state` until [`NodeId::End`] or an error.
     /// requires an edge from [`NodeId::START`] to the first real node.
     pub fn run(&self, mut state: S) -> Result<S, RunError>
     where
