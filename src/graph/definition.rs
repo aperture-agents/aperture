@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
 use crate::graph::node::{Next, Node, NodeId};
-use crate::graph::route::{Edge, RouteTargets, ConditionalEdge, UnconditionalEdge};
+use crate::graph::route::{EdgeRouter, RouteTargets, ConditionalRoute, UnconditionalRoute};
 use crate::graph::runtime::{RunError, Runnable};
 use crate::graph::state::{Merge, State, StateDelta};
 
@@ -29,7 +29,7 @@ pub enum BuildError {
 /// represents a built and validated graph
 pub struct Graph<S, D> {
     nodes: HashMap<NodeId, Box<dyn Runnable<S, D>>>,
-    edges: HashMap<NodeId, Box<dyn Edge<S>>>,
+    edges: HashMap<NodeId, Box<dyn EdgeRouter<S>>>,
 }
 
 /// core graph builder struct
@@ -37,7 +37,7 @@ pub struct Graph<S, D> {
 /// build() will validate and construct a runnable [`Graph`]
 pub struct GraphBuilder<S, D> {
     nodes: HashMap<NodeId, Box<dyn Runnable<S, D>>>,
-    edges: HashMap<NodeId, Box<dyn Edge<S>>>,
+    edges: HashMap<NodeId, Box<dyn EdgeRouter<S>>>,
     error: Option<BuildError>,
 }
 
@@ -68,15 +68,15 @@ impl<S, D> GraphBuilder<S, D> {
         if f_id == NodeId::END {
             self.error.get_or_insert(BuildError::InvalidExit);
         }
-        self.edges.insert(f_id, Box::new(UnconditionalEdge(t_id)));
+        self.edges.insert(f_id, Box::new(UnconditionalRoute(t_id)));
         self
     }
 
     /// register a conditional edge: `from` delegates to `router` after it runs.
-    pub fn add_conditional_edge<F, R> (
+pub fn add_conditional_edge<F, R> (
         mut self,
         from: impl Into<NodeId>,
-        edge: ConditionalEdge<S, F, R>
+        edge: ConditionalRoute<S, F, R>
     ) -> Self
     where
         S: 'static,
@@ -199,7 +199,7 @@ impl<S, D> Graph<S, D> {
     }
 
     /// lookup the router for a node.
-    pub fn router(&self, from: NodeId) -> Option<&dyn Edge<S>> {
+    pub fn router(&self, from: NodeId) -> Option<&dyn EdgeRouter<S>> {
         self.edges.get(&from).map(|b| b.as_ref())
     }
 
@@ -249,7 +249,9 @@ impl<S, D> Graph<S, D> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use strum_macros::EnumIter;
+
+use super::*;
 
     #[derive(Default, Clone, Debug, PartialEq, Eq)]
     struct Counter {
@@ -293,32 +295,44 @@ mod tests {
         }
     }
 
-    struct EndIfZero;
+    #[derive(Copy, Clone, EnumIter)]
+    enum EndIfZeroRoute {
+        A,
+        End,
+    }
 
-    impl Edge<Counter> for EndIfZero {
-        fn route(&self, state: &Counter) -> Next {
-            if state.n == 0 {
-                Next::End
-            } else {
-                Next::from_node("a")
+    impl From<EndIfZeroRoute> for Next {
+        fn from(r: EndIfZeroRoute) -> Next {
+            match r {
+                EndIfZeroRoute::A => Next::from_node("a"),
+                EndIfZeroRoute::End => Next::End,
             }
-        }
-
-        fn possible_next(&self) -> Vec<Next> {
-            vec![Next::from_node("a"), Next::End]
         }
     }
 
-    struct ToStart;
-
-    impl Edge<Counter> for ToStart {
-        fn route(&self, _state: &Counter) -> Next {
-            Next::from_node("__start__")
+    fn end_if_zero(state: &Counter) -> EndIfZeroRoute {
+        if state.n == 0 {
+            EndIfZeroRoute::End
+        } else {
+            EndIfZeroRoute::A
         }
+    }
 
-        fn possible_next(&self) -> Vec<Next> {
-            vec![Next::from_node("__start__")]
+    #[derive(Copy, Clone, EnumIter)]
+    enum ToStartRoute {
+        START,
+    }
+
+    impl From<ToStartRoute> for Next {
+        fn from(r: ToStartRoute) -> Next {
+            match r {
+                ToStartRoute::START => Next::from_node("__start__"),
+            }
         }
+    }
+
+    fn to_start(_state: &Counter) -> ToStartRoute {
+        ToStartRoute::START
     }
 
     #[test]
@@ -530,7 +544,8 @@ mod tests {
 
         let graph = Graph::builder()
             .add_node(a, Dec)
-            .add_conditional_edge(ConditionalEdge::new(EndIfZero))
+            .add_edge(NodeId::START, "a")
+            .add_conditional_edge("a", ConditionalRoute::new(end_if_zero))
             .add_edge(a, NodeId::END)
             .build()
             .unwrap();
@@ -559,7 +574,7 @@ mod tests {
         let graph = Graph::builder()
             .add_node(a, Dec)
             .add_edge(NodeId::START, a)
-            .add_conditional_edge("a", EndIfZero)
+            .add_conditional_edge("a", ConditionalRoute::new(end_if_zero))
             .build()
             .unwrap();
 
@@ -575,7 +590,7 @@ mod tests {
         // END ──────────────▶ ???
         //
         let graph = Graph::<Counter, Counter>::builder()
-            .add_conditional_edge(NodeId::END, EndIfZero)
+            .add_conditional_edge(NodeId::END, ConditionalRoute::new(end_if_zero))
             .build()
             .unwrap_err();
 
@@ -593,7 +608,7 @@ mod tests {
         let graph = Graph::builder()
             .add_node("a", Inc)
             .add_edge(NodeId::START, "a")
-            .add_conditional_edge("a", ToStart)
+            .add_conditional_edge("a", ConditionalRoute::new(to_start))
             .build()
             .unwrap_err();
 

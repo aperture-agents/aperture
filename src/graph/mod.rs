@@ -7,5 +7,5 @@ pub mod runtime;
 pub mod state;
 
 pub use definition::Graph;
-pub use route::{Edge, FnRouter, Router};
+pub use route::{EdgeRouter, ConditionalRoute, UnconditionalRoute};
 pub use runtime::{RunError, Runnable};

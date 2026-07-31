@@ -13,7 +13,7 @@ use crate::graph::node::{Next, NodeId};
 /// as such routing from one node to another will give us a Next
 /// Next is the next Node to run or in case of END - graph termination
 ///
-pub trait Edge<S> {
+pub trait EdgeRouter<S> {
     fn route(&self, state: &S) -> Next;
     fn possible_next(&self) -> Vec<Next>;
 }
@@ -27,11 +27,20 @@ pub trait RouteTargets: Copy {
     fn variants() -> Vec<Next>;
 }
 
+impl<R> RouteTargets for R
+where
+    R: strum::IntoEnumIterator + Into<Next> + Copy,
+{
+    fn variants() -> Vec<Next> {
+        R::iter().map(Into::into).collect()
+    }
+}
+
 /// an unconditonal edge always routes to same target, so we can use `NodeId::END` as `to` for a terminal node
 #[derive(Clone, Copy, Debug)]
-pub struct UnconditionalEdge(pub NodeId);
+pub struct UnconditionalRoute(pub NodeId);
 
-impl<S> Edge<S> for UnconditionalEdge {
+impl<S> EdgeRouter<S> for UnconditionalRoute {
     fn route(&self, _state: &S) -> Next {
         Next::from_node(self.0)
     }
@@ -47,7 +56,7 @@ impl<S> Edge<S> for UnconditionalEdge {
 /// `R` refers to the possible route targets this edge can expect to route to.
 /// PhantomData<fn(&S) -> R> used because ConditionalEdge is generic over state and routetargets but does not contain a state.
 ///
-pub struct ConditionalEdge<S, F, R>
+pub struct ConditionalRoute<S, F, R>
 where
     F: Fn(&S) -> R,
     R: RouteTargets + Into<Next>,
@@ -56,7 +65,7 @@ where
     _marker: std::marker::PhantomData<fn(&S) -> R>,
 }
 
-impl<S, F, R> ConditionalEdge<S, F, R>
+impl<S, F, R> ConditionalRoute<S, F, R>
 where
     F: Fn(&S) -> R,
     R: RouteTargets + Into<Next>,
@@ -69,7 +78,7 @@ where
     }
 }
 
-impl<S, F, R> Edge<S> for ConditionalEdge<S, F, R>
+impl<S, F, R> EdgeRouter<S> for ConditionalRoute<S, F, R>
 where
     F: Fn(&S) -> R,
     R: RouteTargets + Into<Next>,
