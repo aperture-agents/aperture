@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
 use crate::graph::node::{Next, Node, NodeId};
-use crate::graph::route::{Edge, Router};
+use crate::graph::route::{Edge, RouteTargets, ConditionalEdge, UnconditionalEdge};
 use crate::graph::runtime::{RunError, Runnable};
 use crate::graph::state::{Merge, State, StateDelta};
 
@@ -29,7 +29,7 @@ pub enum BuildError {
 /// represents a built and validated graph
 pub struct Graph<S, D> {
     nodes: HashMap<NodeId, Box<dyn Runnable<S, D>>>,
-    routes: HashMap<NodeId, Box<dyn Router<S>>>,
+    edges: HashMap<NodeId, Box<dyn Edge<S>>>,
 }
 
 /// core graph builder struct
@@ -37,7 +37,7 @@ pub struct Graph<S, D> {
 /// build() will validate and construct a runnable [`Graph`]
 pub struct GraphBuilder<S, D> {
     nodes: HashMap<NodeId, Box<dyn Runnable<S, D>>>,
-    routes: HashMap<NodeId, Box<dyn Router<S>>>,
+    edges: HashMap<NodeId, Box<dyn Edge<S>>>,
     error: Option<BuildError>,
 }
 
@@ -68,19 +68,23 @@ impl<S, D> GraphBuilder<S, D> {
         if f_id == NodeId::END {
             self.error.get_or_insert(BuildError::InvalidExit);
         }
-        self.routes.insert(f_id, Box::new(Edge(t_id)));
+        self.edges.insert(f_id, Box::new(UnconditionalEdge(t_id)));
         self
     }
 
     /// register a conditional edge: `from` delegates to `router` after it runs.
-    /// NOTE: No current clean way to validate the router possibilites and if they're valid
-    pub fn add_conditional_edge(
+    pub fn add_conditional_edge<F, R> (
         mut self,
         from: impl Into<NodeId>,
-        router: impl Router<S> + 'static,
-    ) -> Self {
+        edge: ConditionalEdge<S, F, R>
+    ) -> Self
+    where
+        S: 'static,
+        F: Fn(&S) -> R + 'static,
+        R: RouteTargets + Into<Next> + 'static,
+    {
         let f_id = from.into();
-        let invalid_start = router
+        let invalid_start = edge
             .possible_next()
             .iter()
             .any(|p| *p == Next::from_node("__start__"));
@@ -95,9 +99,12 @@ impl<S, D> GraphBuilder<S, D> {
             self.error.get_or_insert(BuildError::InvalidExit);
         }
 
-        self.routes.insert(f_id, Box::new(router));
+        self.edges.insert(f_id, Box::new(edge));
         self
     }
+
+    /// TODO: simple function to setup the connection from START
+    pub fn add_entry_point() {}
 
     /// validate an assembled graph
     /// Result is #[must_use] this ensures the graph is handled and ran
@@ -108,18 +115,18 @@ impl<S, D> GraphBuilder<S, D> {
         }
 
         // Ensure START has an outgoing edge (START -> a)
-        if !self.routes.contains_key(&NodeId::START) {
+        if !self.edges.contains_key(&NodeId::START) {
             return Err(BuildError::MissingEntry);
         }
 
         // Ensure END does not have an outgoing edge (End -> a)
-        if self.routes.contains_key(&NodeId::END) {
+        if self.edges.contains_key(&NodeId::END) {
             return Err(BuildError::InvalidExit);
         }
 
         // every registered node must have an outgoing route
         for id in self.nodes.keys() {
-            if !self.routes.contains_key(id) {
+            if !self.edges.contains_key(id) {
                 return Err(BuildError::MissingRoute(*id));
             }
         }
@@ -135,7 +142,7 @@ impl<S, D> GraphBuilder<S, D> {
             if !visited.insert(current) {
                 continue;
             }
-            let Some(router) = self.routes.get(&current) else {
+            let Some(router) = self.edges.get(&current) else {
                 continue; // no outgoing route from here — already caught above for real nodes
             };
 
@@ -167,7 +174,7 @@ impl<S, D> GraphBuilder<S, D> {
 
         Ok(Graph {
             nodes: self.nodes,
-            routes: self.routes,
+            edges: self.edges,
         })
     }
 }
@@ -176,7 +183,7 @@ impl<S, D> fmt::Debug for Graph<S, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Graph")
             .field("nodes", &self.nodes.len())
-            .field("routes", &self.routes.len())
+            .field("edges", &self.edges.len())
             .finish()
     }
 }
@@ -186,14 +193,14 @@ impl<S, D> Graph<S, D> {
     pub fn builder() -> GraphBuilder<S, D> {
         GraphBuilder {
             nodes: HashMap::new(),
-            routes: HashMap::new(),
+            edges: HashMap::new(),
             error: None,
         }
     }
 
     /// lookup the router for a node.
-    pub fn router(&self, from: NodeId) -> Option<&dyn Router<S>> {
-        self.routes.get(&from).map(|b| b.as_ref())
+    pub fn router(&self, from: NodeId) -> Option<&dyn Edge<S>> {
+        self.edges.get(&from).map(|b| b.as_ref())
     }
 
     /// execute from `state` until [`NodeId::End`] or an error.
@@ -288,7 +295,7 @@ mod tests {
 
     struct EndIfZero;
 
-    impl Router<Counter> for EndIfZero {
+    impl Edge<Counter> for EndIfZero {
         fn route(&self, state: &Counter) -> Next {
             if state.n == 0 {
                 Next::End
@@ -304,7 +311,7 @@ mod tests {
 
     struct ToStart;
 
-    impl Router<Counter> for ToStart {
+    impl Edge<Counter> for ToStart {
         fn route(&self, _state: &Counter) -> Next {
             Next::from_node("__start__")
         }
@@ -523,7 +530,7 @@ mod tests {
 
         let graph = Graph::builder()
             .add_node(a, Dec)
-            .add_conditional_edge(NodeId::START, EndIfZero)
+            .add_conditional_edge(ConditionalEdge::new(EndIfZero))
             .add_edge(a, NodeId::END)
             .build()
             .unwrap();
