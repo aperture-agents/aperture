@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
 use crate::graph::node::{Next, Node, NodeId};
-use crate::graph::route::{EdgeRouter, RouteTargets, ConditionalRoute, UnconditionalRoute};
+use crate::graph::route::{ConditionalRoute, EdgeRouter, RouteTargets, UnconditionalRoute};
 use crate::graph::runtime::{RunError, Runnable};
 use crate::graph::state::{Merge, State, StateDelta};
 
@@ -73,10 +73,10 @@ impl<S, D> GraphBuilder<S, D> {
     }
 
     /// register a conditional edge: `from` delegates to `router` after it runs.
-pub fn add_conditional_edge<F, R> (
+    pub fn add_conditional_edge<F, R>(
         mut self,
         from: impl Into<NodeId>,
-        edge: ConditionalRoute<S, F, R>
+        edge: ConditionalRoute<S, F, R>,
     ) -> Self
     where
         S: 'static,
@@ -251,7 +251,7 @@ impl<S, D> Graph<S, D> {
 mod tests {
     use strum_macros::EnumIter;
 
-use super::*;
+    use super::*;
 
     #[derive(Default, Clone, Debug, PartialEq, Eq)]
     struct Counter {
@@ -320,19 +320,19 @@ use super::*;
 
     #[derive(Copy, Clone, EnumIter)]
     enum ToStartRoute {
-        START,
+        Start,
     }
 
     impl From<ToStartRoute> for Next {
         fn from(r: ToStartRoute) -> Next {
             match r {
-                ToStartRoute::START => Next::from_node("__start__"),
+                ToStartRoute::Start => Next::from_node("__start__"),
             }
         }
     }
 
     fn to_start(_state: &Counter) -> ToStartRoute {
-        ToStartRoute::START
+        ToStartRoute::Start
     }
 
     #[test]
