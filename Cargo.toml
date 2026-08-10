@@ -7,3 +7,5 @@ edition = "2024"
 all = "warn"
 
 [dependencies]
+strum = "0.28"
+strum_macros = "0.28"

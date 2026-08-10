@@ -13,16 +13,34 @@ use crate::graph::node::{Next, NodeId};
 /// as such routing from one node to another will give us a Next
 /// Next is the next Node to run or in case of END - graph termination
 ///
-pub trait Router<S> {
+pub trait EdgeRouter<S> {
     fn route(&self, state: &S) -> Next;
     fn possible_next(&self) -> Vec<Next>;
 }
 
-/// edge always routes to same target, so we can use `NodeId::END` as `to` for a terminal node
-#[derive(Clone, Copy, Debug)]
-pub struct Edge(pub NodeId);
+/// trait for expected route targets an edge can return
+/// edges must return RouteTargets
+///
+/// this allows us to get variants() aka next_possible
+///
+pub trait RouteTargets: Copy {
+    fn variants() -> Vec<Next>;
+}
 
-impl<S> Router<S> for Edge {
+impl<R> RouteTargets for R
+where
+    R: strum::IntoEnumIterator + Into<Next> + Copy,
+{
+    fn variants() -> Vec<Next> {
+        R::iter().map(Into::into).collect()
+    }
+}
+
+/// an unconditonal edge always routes to same target, so we can use `NodeId::END` as `to` for a terminal node
+#[derive(Clone, Copy, Debug)]
+pub struct UnconditionalRoute(pub NodeId);
+
+impl<S> EdgeRouter<S> for UnconditionalRoute {
     fn route(&self, _state: &S) -> Next {
         Next::from_node(self.0)
     }
@@ -35,39 +53,41 @@ impl<S> Router<S> for Edge {
 /// conditional route which selects Next from a closure result
 /// `F` refers to the function to execute to determine Next.
 /// `S` refers to the state to observe in order to make the correct Next decision.
-/// PhantomData<fn(&S)> used because FnRouter is generic over state but does not contain a state.
+/// `R` refers to the possible route targets this edge can expect to route to.
+/// PhantomData<fn(&S) -> R> used because ConditionalEdge is generic over state and routetargets but does not contain a state.
 ///
-pub struct FnRouter<S, F>
+pub struct ConditionalRoute<S, F, R>
 where
-    F: Fn(&S) -> Next,
+    F: Fn(&S) -> R,
+    R: RouteTargets + Into<Next>,
 {
     f: F,
-    possible_next: Vec<Next>,
-    _marker: std::marker::PhantomData<fn(&S)>,
+    _marker: std::marker::PhantomData<fn(&S) -> R>,
 }
 
-impl<S, F> FnRouter<S, F>
+impl<S, F, R> ConditionalRoute<S, F, R>
 where
-    F: Fn(&S) -> Next,
+    F: Fn(&S) -> R,
+    R: RouteTargets + Into<Next>,
 {
-    pub fn new(f: F, possible_next: Vec<Next>) -> Self {
+    pub fn new(f: F) -> Self {
         Self {
             f,
-            possible_next,
-            _marker: std::marker::PhantomData,
+            _marker: std::marker::PhantomData::<fn(&S) -> R>,
         }
     }
 }
 
-impl<S, F> Router<S> for FnRouter<S, F>
+impl<S, F, R> EdgeRouter<S> for ConditionalRoute<S, F, R>
 where
-    F: Fn(&S) -> Next,
+    F: Fn(&S) -> R,
+    R: RouteTargets + Into<Next>,
 {
     fn route(&self, state: &S) -> Next {
-        (self.f)(state)
+        (self.f)(state).into()
     }
 
     fn possible_next(&self) -> Vec<Next> {
-        self.possible_next.clone()
+        R::variants()
     }
 }
